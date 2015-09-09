@@ -17,7 +17,10 @@
       delete_fail : 'The message could not be deleted, please try again later.',
      
       textarea_placeholder : 'Message body..',
-      button_submit : 'Submit'
+      button_submit : 'Submit',
+      
+      fatal_error : 'In case of error : ',
+      button_force : 'Force submit'
     },
    
     node : null,
@@ -25,6 +28,12 @@
     id : window.location.href.replace(/.*?\/t(\d+).*/, '$1'),
    
     store : new Object(),
+    
+    encode : function(string) {
+      return encodeURIComponent(escape(this.message.value).replace(/%u[A-F0-9]{4}/g, function(match) {
+        return '&#' + parseInt(match.substr(2), 16) + ';';
+      })).replace(/%25/g, '%');
+    },
    
     create : function(node, href) {
       var form = document.createElement('form');
@@ -35,33 +44,47 @@
       form.innerHTML = '<div id="editor_title" class="post_header"></div><div id="text_box"><textarea placeholder="' + $FAMA.lang.textarea_placeholder + '" name="message"></textarea></div><div><input type="submit" value="' + $FAMA.lang.button_submit + '" name="post" class="defaultBtn"/><div id="post_status" style="display:none"></div></div><div id="mobile_data" style="display:none"></div>';
      
       form.onsubmit = function(e) {
-        var t = this,
-            data = $(t).serialize() + '&post=1',
-            status = document.getElementById('post_status');
-       
-        t.post.style.display = 'none';
-        status.style.display = 'block';
-        status.className = 'post_progress';
-        status.innerHTML = $FAMA.lang.status_progress;
-       
         e.preventDefault();
+        
+        try {
+          var t = this,
+              data = $(t).serialize() + '&post=1',
+              status = document.getElementById('post_status'),
+              charSet = document.characterSet || document.charset;
        
-        $.post('/post', data, function(d) {
-          var redir = d.match(/.*content="\d;url=(.*?)".*/i, '$1'),
-              url = (redir && redir[1]) ? redir[1].replace(/&amp;/g, '&') : window.location.pathname + (/mode=reply/.test(data) ? '?view=newest' : '');
+          if (charSet != 'UTF-8') {
+            if (t.message) data = data.replace(/message=.*?&/, 'message=' + $FAMA.encode(t.message.value) + '&');
+            if (t.subject) data = data.replace(/subject=.*?&/, 'subject=' + $FAMA.encode(t.subject.value) + '&');
+          }
+       
+          t.post.style.display = 'none';
+          status.style.display = 'block';
+          status.className = 'post_progress';
+          status.innerHTML = $FAMA.lang.status_progress;
+       
+          $.post('/post', data, function(d) {
+            var redir = d.match(/.*content="\d;url=(.*?)".*/i, '$1'),
+                url = (redir && redir[1]) ? redir[1].replace(/&amp;/g, '&') : window.location.pathname + (/mode=reply/.test(data) ? '?view=newest' : '');
              
-          status.className = 'post_done';
-          status.innerHTML = $FAMA.lang.status_done(url);
+            status.className = 'post_done';
+            status.innerHTML = $FAMA.lang.status_done(url);
          
-          window.setTimeout(function() {
-            window.location.href = url;
-          }, 1500);
+            window.setTimeout(function() {
+              window.location.href = url;
+            }, 1500);
          
-        }).fail(function() {
+          }).fail(function() {
+            status.className = 'post_fail';
+            status.innerHTML = $FAMA.lang.status_fail;
+            t.post.style.display = '';
+          });
+        } catch (err) {
+          var status = document.getElementById('post_status');
+          this.onsubmit = null;
+          status.innerHTML = err + '<div>' + $FAMA.lang.fatal_error + '<input type="submit" name="post" value="' + $FAMA.lang.button_force + '" /></div>';
           status.className = 'post_fail';
-          status.innerHTML = $FAMA.lang.status_fail;
-          t.post.style.display = '';
-        });
+          status.style.display = 'block';
+        }
       };
      
      
